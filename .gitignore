@@ -1,0 +1,6 @@
+.pytest_cache/
+.venv/
+poetry.lock
+dist/
+build/
+.DS_Store
