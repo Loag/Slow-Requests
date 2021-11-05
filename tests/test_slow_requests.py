@@ -1,14 +1,10 @@
 import pytest
-import warnings
+from slow_requests.main import InputReq, SlowRequests
 
-from requests.api import request
-from slow_requests import __version__
-import slow_requests
-from slow_requests.main import SlowRequests
+def test_InputReq_instantiation_success():
+    inp_req = InputReq("https://google.com")
+    assert isinstance(inp_req, InputReq) == True
 
-
-def test_version():
-    assert __version__ == '0.1.0'
 
 def test_instantiation_success_with_defaults():
     sl = SlowRequests()
@@ -34,7 +30,6 @@ def test_instantiation_fast_warning():
 def test_instantiation_slow_warning():
     with pytest.warns(UserWarning):
         sl = SlowRequests(offset=301, per_second=False)
-
 
 # not ideal
 def test_get_with_add():

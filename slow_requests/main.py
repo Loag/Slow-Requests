@@ -158,7 +158,7 @@ class InputReqFactory:
 
     args = {k: v for k, v in input.items() if v is not None}
 
-    
+
 
 class InputReq:
   '''
@@ -172,8 +172,7 @@ class InputReq:
     self.url = self.__check_url(url)
     self.method = self.__check_method(method)
     self.headers = self.__check_headers(headers) 
-    self.body = self.__check_body(body)
-    return self
+    self.body = self.__check_body(method, body)
 
   # returned a prepared request object
   def to_req(self):
@@ -192,9 +191,10 @@ class InputReq:
     return method
 
   def __check_headers(self, headers):
-    if isinstance(headers, dict):
-      return headers
-    raise TypeError("Headers must be a dict")
+    if headers:
+      if isinstance(headers, dict):
+        return headers
+      raise TypeError("Headers must be a dict")
 
   def __check_body(self, method, body):
     if body and method.upper() not in ["POST", "PUT"]:
