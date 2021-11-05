@@ -1,7 +1,10 @@
-import requests
+from requests import Request, Session
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 import warnings
 from time import sleep
+from timeit import default_timer as timer
+from datetime import timedelta
 
 class SlowRequests:
   '''
@@ -9,19 +12,15 @@ class SlowRequests:
     * offset: Float Time to wait in ms between requests
     * per_second: Boolean, if true than offset is the amount of requests to make per second instead of waiting per request.
   '''
-  def __init__(self, offset=0.1, per_second=False, headers=None):
+  def __init__(self, offset=0.1, per_second=False):
     self.__eval_setup(offset, per_second)
 
-    self.headers = headers # the headers to use for each request
+    self.sender_session = Session()
+
     self.offset = offset
     self.per_second = per_second
 
     self.__requests = [] # the requests
-
-  # get the url currently being executed
-  @property
-  def current(self):
-      print("This is the current request being executed")
 
   def __eval_setup(self, offset, per_second):
     if offset < 1 and per_second:
@@ -36,31 +35,180 @@ class SlowRequests:
 
   '''
     PARAMS:
-    * request: can be single request object, a list of request objects, a string path, or a list of string paths..?
+    * url: The URL to make a request to
+    * method: HTTP method (optional)
+    * body: the request body (optional)
+    * headers: request headers (optional)
   '''
-  def add(self, request):
+  def add(self, url, method=None, body=None, headers=None):
+    in_req = InputReqFactory.create(url, method=method, body=body, headers=headers)
+    self.__requests.append(in_req)
 
-    if isinstance(request, list):
-      if all([self.__is_request(req) for req in request]):
-        self.__requests.extend(request)
+  '''
+    PARAMS:
+    * urls: The URLs to request
+    * method: HTTP method (optional)
+    * bodies: the request bodies to map to urls (optional)
+    * headers: request headers to map to urls (optional)
+  '''
+  def add_many(self, urls, method=None, bodies=None, headers=None):
+    in_reqs = InputReqFactory.create_many(urls, method, bodies, headers)
+    self.__requests.extend(in_reqs)
 
-      elif all([self.__is_string(req) for req in request]):
-        self.__requests.extend([self.create_request(req) for req in request])
+  '''
+    PARAMS:
+    * input_requests: user can just input the requests here instead of having to use add
+  '''
+  def execute(self, requests=None):
+    if not self.__requests and not requests:
+      raise IndexError("No Requests")
     
-    elif self.__is_request(request):
-      self.__requests.append(request)
+    elif requests:
+      self.add_many(requests)
+    
+    # if in per second mode then use the offset as the amount of req to run per second
+    if self.per_second:
+      return self.__execute_per_second()
 
-    elif self.__is_string(request):
-      self.__requests.append(self.create_request(request))
+    return self.__execute_per_request()
 
-    else:
-      raise TypeError("Requests must be instance of request object or string")
+  '''
+    If per second choice was selected, try and execute the reqs concurrently per secoond.
 
-  def __is_request(self, input):
-    return isinstance(input, requests)
+    returns:
+      * a generator of request responses
+  '''
+  def __execute_per_second(self):
+
+    executor = ThreadPoolExecutor()
+
+    # while there are requests
+    while self.__requests:
+
+      # start a new timer:
+      start = timer()
+      # get a new count
+      count = self.offset
+
+      # while we can make requests for this second
+      while count:
+        # if we run out of requests half way through the count
+        if not self.__requests:
+          break
+        
+        # get a request
+        req = self.__requests.pop()
+
+        # submit to the executor 
+        ex = executor.submit(self.sender_session.send(req.to_req()))
+
+        # try to yield the result
+        try:
+          yield ex.result()          
+
+        except Exception as e:
+          print(e)
+
+        # get the ending time
+        end = timer()
+        # if the total execution has been less than 1 second decrement the count
+        if timedelta(seconds=end-start).total_seconds() < 1:
+          count -= 1
+
+        # if it has been equal or longer, break out. We will inevitably fall behind here
+        else:
+          break
+      
+      # if we completed all of the requests per second before a second elapsed
+      end = timer()
+
+      # sleep the rest of the second
+      if timedelta(seconds=end-start).total_seconds() < 1:
+        sleep(end-start)
+
+  '''
+    if per second not selected, just time out per request.
+    returns:
+      * a generator of request response
+  '''
+  def __execute_per_request(self):
+    while self.__requests:
+      req = self.__requests.pop() # this is a request object 
+      yield self.sender_session.send(req.to_req())
+      sleep(self.offset)
+
+  '''
+    get a specific response for an input? 
+  '''
+  def response(self, id):
+    pass
+
+class InputReqFactory:
+
+  @staticmethod
+  def create(self, url, **input):
+    # remove any empty args
+    args = {k: v for k, v in input.items() if v is not None}
+    return InputReq(url, **args)
+
+  @staticmethod
+  def create_many(self, urls, **input):
+    if not isinstance(urls, list):
+      raise TypeError("Input must be a list")
+
+    args = {k: v for k, v in input.items() if v is not None}
+
+    
+
+class InputReq:
+  '''
+    PARAMS:
+    * url: String url
+    * method: http method to perform
+    * headers: header dict for this request
+    * body: body to send if post or put
+  '''
+  def __init__(self, url, method='GET', headers=None, body=None):
+    self.url = self.__check_url(url)
+    self.method = self.__check_method(method)
+    self.headers = self.__check_headers(headers) 
+    self.body = self.__check_body(body)
+    return self
+
+  # returned a prepared request object
+  def to_req(self):
+    req = Request(url=self.url, method=self.method, headers=self.headers)
+    p_req = req.prepare()
+
+    if self.body:
+      p_req.body = self.body
+
+    return p_req
+
+  def __check_method(self, method):
+    method = method.upper()
+    if method not in ["GET", "POST", "PUT", "DELETE"]:
+      raise TypeError("Unsupported method: " + method)
+    return method
+
+  def __check_headers(self, headers):
+    if isinstance(headers, dict):
+      return headers
+    raise TypeError("Headers must be a dict")
+
+  def __check_body(self, method, body):
+    if body and method.upper() not in ["POST", "PUT"]:
+      raise RuntimeError("Body required post or put method")
+    return body
+
+  def __check_url(self, url):
+    if self.__is_string(url) and self.__is_url(url):
+      return url
 
   def __is_string(self, input):
-    return isinstance(input, str)
+    if isinstance(input, str):
+      return True
+    raise TypeError("input url must be a string")
 
   def __is_url(self, url):
     try:
@@ -69,40 +217,3 @@ class SlowRequests:
     except ValueError:
       raise ValueError("Input is not a valid url")
       
-  '''
-    PARAMS:
-    * input: valid string url
-  '''
-  def create_request(self, input):
-    if self.__is_string(input):
-      if self.__is_url(input):
-        return requests(input, headers=self.headers)
-
-    raise TypeError("Input must be a string url")
-
-  def execute(self, input_requests=None):
-    if not requests or input_requests:
-      raise IndexError("No Requests")
-    
-    elif input_requests:
-      self.add(input_requests)
-    
-    # execute each request here w/ offset
-    if self.per_second:
-      return self.__execute_per_second()
-
-  
-  # if we are doing a per second run
-  def __execute_per_second(self):
-    pass
-
-  def __execute_per_request(self):
-    for req in requests:
-      pass
-
-  '''
-    get a specific response for an input? 
-  '''
-  def response(self, id):
-    pass
-
