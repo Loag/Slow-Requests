@@ -2,7 +2,7 @@ from slow_requests import SlowRequests
 from timeit import default_timer as timer
 from datetime import timedelta
 
-def run():
+def ten_gets_per_second():
   # setup to do 10 per second
   sl = SlowRequests(offset=10, per_second=True)
 
@@ -25,4 +25,4 @@ def run():
 
 
 if __name__ == '__main__':
-  run()
+  ten_gets_per_second()
