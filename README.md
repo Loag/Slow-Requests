@@ -15,7 +15,7 @@
 ### Usage:
 
 #### Set per second threshold
-```
+```python
   from slow_requests import SlowRequests
 
   # 10 requests per second
@@ -29,7 +29,7 @@
 ```
 
 #### Wait per request
-```
+```python
   from slow_requests import SlowRequests
 
   # wait 2 seconds per request
