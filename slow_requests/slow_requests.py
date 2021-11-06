@@ -5,6 +5,7 @@ import warnings
 from time import sleep
 from timeit import default_timer as timer
 from datetime import timedelta
+from threading import local
 
 class SlowRequests:
   '''
@@ -14,8 +15,6 @@ class SlowRequests:
   '''
   def __init__(self, offset=0.1, per_second=False):
     self.__eval_setup(offset, per_second)
-
-    self.sender_session = Session()
 
     self.offset = offset
     self.per_second = per_second
@@ -52,7 +51,7 @@ class SlowRequests:
     * headers: request headers to map to urls (optional)
   '''
   def add_many(self, urls, method=None, bodies=None, headers=None):
-    in_reqs = InputReqFactory.create_many(urls, method, bodies, headers)
+    in_reqs = InputReqFactory.create_many(urls, method=method, bodies=bodies, headers=headers)
     self.__requests.extend(in_reqs)
 
   '''
@@ -81,6 +80,12 @@ class SlowRequests:
   def __execute_per_second(self):
 
     executor = ThreadPoolExecutor()
+    thread_local = local()
+
+    def get_session():
+        if not hasattr(thread_local, "session"):
+            thread_local.session = Session()
+        return thread_local.session
 
     # while there are requests
     while self.__requests:
@@ -100,11 +105,11 @@ class SlowRequests:
         req = self.__requests.pop()
 
         # submit to the executor 
-        ex = executor.submit(self.sender_session.send(req.to_req()))
+        ex = executor.submit(get_session().send, req.to_req())
 
         # try to yield the result
         try:
-          yield ex.result()          
+          yield ex.result()      
 
         except Exception as e:
           print(e)
@@ -146,18 +151,18 @@ class SlowRequests:
 class InputReqFactory:
 
   @staticmethod
-  def create(self, url, **input):
+  def create(url, **input):
     # remove any empty args
     args = {k: v for k, v in input.items() if v is not None}
     return InputReq(url, **args)
 
   @staticmethod
-  def create_many(self, urls, **input):
+  def create_many(urls, **input):
     if not isinstance(urls, list):
       raise TypeError("Input must be a list")
 
     args = {k: v for k, v in input.items() if v is not None}
-
+    return [InputReq(url, **args) for url in urls]
 
 
 class InputReq:

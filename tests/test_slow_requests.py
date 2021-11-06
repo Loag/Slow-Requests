@@ -1,5 +1,5 @@
 import pytest
-from slow_requests.main import InputReq, SlowRequests
+from slow_requests.slow_requests import InputReq, SlowRequests
 
 def test_InputReq_instantiation_success():
     inp_req = InputReq("https://google.com")
