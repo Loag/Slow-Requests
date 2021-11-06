@@ -129,7 +129,7 @@ class SlowRequests:
 
       # sleep the rest of the second
       if timedelta(seconds=end-start).total_seconds() < 1:
-        sleep(end-start)
+        sleep(1 - (end-start))
 
   '''
     if per second not selected, just time out per request.
