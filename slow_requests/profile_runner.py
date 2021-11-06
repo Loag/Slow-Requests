@@ -19,7 +19,6 @@ def run():
 
   end = timer()
   print("******************************************")
-  print(count)
   print(timedelta(seconds=end-start).total_seconds())
   print("******************************************")
 
